@@ -1,0 +1,54 @@
+{
+  "users": [
+    {
+      "user_id": "user_1",
+      "profile": {
+        "current_balance": 420.0,
+        "monthly_income": 1500.0,
+        "monthly_outgoings": 900.0
+      },
+      "transactions": [
+        { "id": "u1_t1",  "text": "Salary credited 1500 USD on 2025-08-01",                     "amount": 1500.0 },
+        { "id": "u1_t2",  "text": "Grocery 120 USD on 2025-08-20",                             "amount": 120.0 },
+        { "id": "u1_t3",  "text": "Paid electricity bill 60 USD on 2025-08-05",                "amount": 60.0 },
+        { "id": "u1_t4",  "text": "Bought phone accessory 30 USD on 2025-08-22",               "amount": 30.0 },
+        { "id": "u1_t5",  "text": "Coffee shop 8 USD on 2025-08-23",                          "amount": 8.0 },
+        { "id": "u1_t6",  "text": "Online subscription (streaming) 12.99 USD on 2025-07-30",    "amount": 12.99 },
+        { "id": "u1_t7",  "text": "Dinner at Bella Italia 45 USD on 2025-08-10",              "amount": 45.0 },
+        { "id": "u1_t8",  "text": "Gas station 40 USD on 2025-08-12",                         "amount": 40.0 },
+        { "id": "u1_t9",  "text": "Refund - returned item 25 USD on 2025-08-18",               "amount": -25.0 },
+        { "id": "u1_t10", "text": "Pharmacy purchase 18.50 USD on 2025-07-28",                "amount": 18.5 },
+        { "id": "u1_t11", "text": "Transfer to friend - rent share 200 USD on 2025-08-03",      "amount": 200.0 },
+        { "id": "u1_t12", "text": "Movie tickets 24 USD on 2025-08-14",                      "amount": 24.0 },
+        { "id": "u1_t13", "text": "Coffee shop 6 USD on 2025-07-25",                          "amount": 6.0 },
+        { "id": "u1_t14", "text": "Electronics (headphones) 85 USD on 2025-06-20",            "amount": 85.0 },
+        { "id": "u1_t15", "text": "ATM withdrawal 100 USD on 2025-08-02",                    "amount": 100.0 }
+      ]
+    },
+    {
+      "user_id": "user_2",
+      "profile": {
+        "current_balance": 2500.0,
+        "monthly_income": 3000.0,
+        "monthly_outgoings": 1200.0
+      },
+      "transactions": [
+        { "id": "u2_t1",  "text": "Rent payment 800 USD on 2025-08-01",                      "amount": 800.0 },
+        { "id": "u2_t2",  "text": "Salary credited 3000 USD on 2025-08-01",                   "amount": 3000.0 },
+        { "id": "u2_t3",  "text": "Car service 200 USD on 2025-08-10",                        "amount": 200.0 },
+        { "id": "u2_t4",  "text": "Grocery 90 USD on 2025-08-15",                               "amount": 90.0 },
+        { "id": "u2_t5",  "text": "Business dinner 150 USD on 2025-07-22",                      "amount": 150.0 },
+        { "id": "u2_t6",  "text": "Flight booking 420 USD on 2025-06-18",                       "amount": 420.0 },
+        { "id": "u2_t7",  "text": "Gym membership 35 USD on 2025-07-01",                        "amount": 35.0 },
+        { "id": "u2_t8",  "text": "Electronics store 220 USD on 2025-08-05",                    "amount": 220.0 },
+        { "id": "u2_t9",  "text": "Coffee shop 9 USD on 2025-08-20",                             "amount": 9.0 },
+        { "id": "u2_t10", "text": "Refund - flight adjustment 50 USD on 2025-07-20",             "amount": -50.0 },
+        { "id": "u2_t11", "text": "Insurance payment 120 USD on 2025-07-28",                    "amount": 120.0 },
+        { "id": "u2_t12", "text": "Transfer from savings 500 USD on 2025-08-02",               "amount": 500.0 },
+        { "id": "u2_t13", "text": "Taxi ride 18 USD on 2025-08-12",                             "amount": 18.0 },
+        { "id": "u2_t14", "text": "Online shopping (electronics) 65.75 USD on 2025-07-30",     "amount": 65.75 },
+        { "id": "u2_t15", "text": "Dinner with clients 210 USD on 2025-08-09",                 "amount": 210.0 }
+      ]
+    }
+  ]
+}

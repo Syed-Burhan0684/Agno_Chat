@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Agno Chat Demo</title>
+  <style>
+    /* Reset & Layout */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #eef2f7, #dce3f0);
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 30px;
+      color: #333;
+    }
+    .chat-container {
+      width: 100%;
+      max-width: 720px;
+      background: #fff;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      background: #0b63ce;
+      color: #fff;
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    header .controls select,
+    header .controls button {
+      margin-left: 8px;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    header .controls select {
+      background: #fff;
+      color: #333;
+    }
+    header .controls button {
+      background: #ff6b6b;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    header .controls button:hover { background: #e85656; }
+
+    /* Chat */
+    #chat {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      background: #f9fafc;
+    }
+    .msg {
+      margin: 12px 0;
+      max-width: 70%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      line-height: 1.4;
+      word-wrap: break-word;
+    }
+    .user {
+      background: #e1f0ff;
+      color: #0b63ce;
+      margin-left: auto;
+      border-bottom-right-radius: 4px;
+    }
+    .agent {
+      background: #e6f6ea;
+      color: #237a2f;
+      margin-right: auto;
+      border-bottom-left-radius: 4px;
+    }
+    .meta {
+      font-size: 0.8rem;
+      color: #777;
+      text-align: center;
+      margin: 6px 0;
+    }
+
+    /* Controls */
+    #controls {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      border-top: 1px solid #eee;
+      background: #fff;
+      gap: 10px;
+    }
+    #msgInput {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+    #controls button {
+      padding: 10px 18px;
+      background: #0b63ce;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #controls button:hover { background: #094a9a; }
+
+    /* Status */
+    .status {
+      font-size: 0.85rem;
+      color: #aa7700;
+      margin-left: 10px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <header>
+      <h2>💬 Agno + OpenAI Chat</h2>
+      <div class="controls">
+        <select id="user">
+          <option value="user_1">User 1</option>
+          <option value="user_2">User 2</option>
+        </select>
+        <button onclick="clearHistory()">Clear</button>
+      </div>
+    </header>
+
+    <div id="chat"></div>
+
+    <div id="controls">
+      <input id="msgInput" type="text" placeholder="Type your message..." />
+      <button onclick="sendMsg()">Send</button>
+      <div id="status" class="status"></div>
+    </div>
+  </div>
+
+<script>
+/* --- Your existing refined polling logic kept intact --- */
+const POLL_INTERVAL_MS = 1000;
+const MAX_POLL_ATTEMPTS = 30;
+const polls = {};
+function makePollKey(user, msgId){ return `${user}::${msgId}`; }
+
+async function sendMsg(){
+  const user = document.getElementById('user').value;
+  const msg = document.getElementById('msgInput').value.trim();
+  if(!msg) return;
+  const msgId = 'm' + Date.now() + '_' + Math.random().toString(36).substring(2,8);
+  appendMessage(msg, 'user');
+  appendMessageWithId('Thinking...', 'agent', agentIdFor(msgId));
+  document.getElementById('msgInput').value = '';
+  setStatus('Sending...');
+
+  try {
+    const resp = await fetch('/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({user_id: user, message: msg})
+    });
+    const data = await resp.json();
+    overwriteAgentMessage(msgId, data.reply);
+
+    let evidenceText = 'none';
+    if (data.evidence && data.evidence.length > 0) {
+      evidenceText = data.evidence.map(e => (e.meta?.doc_id) || e.doc_id || 'id').join(', ');
+    }
+    appendMeta(`⏱ ${Math.round(data.latency_ms)} ms | Evidence: ${evidenceText}`);
+
+    if (data.refined_pending) {
+      appendMeta('Refinement in progress...');
+      startPollingRefined(user, msgId);
+    } else {
+      stopPollingRefined(user, msgId);
+    }
+    setStatus('');
+  } catch (err) {
+    console.error('chat error', err);
+    appendMeta('⚠️ Error contacting server.');
+    setStatus('');
+  } finally {
+    const chatDiv = document.getElementById('chat'); chatDiv.scrollTop = chatDiv.scrollHeight;
+  }
+}
+
+function agentIdFor(msgId){ return `agent_${msgId}`; }
+function appendMessage(text, cls){
+  const el = document.createElement('div');
+  el.className = 'msg ' + cls;
+  el.innerText = text;
+  document.getElementById('chat').appendChild(el);
+}
+function appendMessageWithId(text, cls, id){
+  const el = document.createElement('div');
+  el.className = 'msg ' + cls;
+  el.id = id;
+  el.innerText = text;
+  document.getElementById('chat').appendChild(el);
+}
+function overwriteAgentMessage(msgId, newText){
+  const el = document.getElementById(agentIdFor(msgId));
+  if (el) el.innerText = newText;
+  else appendMessage(newText, 'agent');
+}
+function appendMeta(text){
+  const el = document.createElement('div');
+  el.className = 'meta';
+  el.innerText = text;
+  document.getElementById('chat').appendChild(el);
+}
+function setStatus(t){ document.getElementById('status').innerText = t || ''; }
+
+async function startPollingRefined(user, msgId){
+  const key = makePollKey(user, msgId);
+  if (polls[key]?.intervalId) return;
+  polls[key] = { attempts: 0, intervalId: null };
+  const doPoll = async () => {
+    try {
+      polls[key].attempts++;
+      const r = await fetch('/refined/' + encodeURIComponent(user));
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j.ready) {
+        overwriteAgentMessage(msgId, j.text);
+        appendMeta('✨ Refined answer ready.');
+        stopPollingRefined(user, msgId);
+      }
+      if (polls[key].attempts >= MAX_POLL_ATTEMPTS) {
+        appendMeta('⏳ Refined answer not available, stopped polling.');
+        stopPollingRefined(user, msgId);
+      }
+    } catch {
+      if (++polls[key].attempts >= MAX_POLL_ATTEMPTS) {
+        appendMeta('⚠️ Refined polling error, stopped.');
+        stopPollingRefined(user, msgId);
+      }
+    } finally {
+      const chatDiv = document.getElementById('chat'); chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+  };
+  await doPoll();
+  polls[key].intervalId = setInterval(doPoll, POLL_INTERVAL_MS);
+}
+function stopPollingRefined(user, msgId){
+  const key = makePollKey(user, msgId);
+  if (polls[key]?.intervalId) clearInterval(polls[key].intervalId);
+  delete polls[key];
+}
+async function clearHistory(){
+  const user = document.getElementById('user').value;
+  await fetch('/reset/' + encodeURIComponent(user), {method:'POST'});
+  document.getElementById('chat').innerHTML = '';
+  appendMeta('🗑 History cleared for ' + user);
+  Object.keys(polls).forEach(k => {
+    if (k.startsWith(user + '::')) {
+      if (polls[k].intervalId) clearInterval(polls[k].intervalId);
+      delete polls[k];
+    }
+  });
+}
+window.addEventListener('beforeunload', () => {
+  Object.values(polls).forEach(p => p.intervalId && clearInterval(p.intervalId));
+});
+</script>
+</body>
+</html>
