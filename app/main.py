@@ -25,48 +25,29 @@ app = FastAPI(title='Agno Chat Demo')
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "app", "static"))
 app.mount('/static', StaticFiles(directory=os.path.join(BASE_DIR, "app", 'static')), name='static')
 
+# in-memory state (demo only)
 CHAT_HISTORY = {}
-REFINED_RESULTS = {}
+REFINED_RESULTS = {}    # user_id -> {text, evidence, ts}
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
 
-
+# helpers
 def extract_price(text: str):
-    """
-    Extract a numeric price only if there's clear money context.
-    Examples: "$200", "200 USD", "pay 300", "buy for 150"
-    Will ignore plain numbers like '3' in 'last 3 transactions'.
-    """
-    money_words = ["usd", "dollars", "bucks", "eur", "rs", "inr"]
-    purchase_verbs = ["buy", "afford", "pay", "purchase", "spend"]
-
-    # currency with symbol or word
-    m = re.search(r"\$([0-9]+(?:\.[0-9]+)?)", text, flags=re.I)
-    if not m:
-        m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(%s)" % "|".join(money_words), text, flags=re.I)
-
+    m = re.search(r"\$?\s*([0-9]+(?:\.[0-9]+)?)", text)
     if m:
         try:
             return float(m.group(1))
         except:
             return None
-
-    # numeric amount with purchase verb nearby
-    for v in purchase_verbs:
-        m = re.search(rf"{v}\s+(?:for\s+)?([0-9]+(?:\.[0-9]+)?)", text, flags=re.I)
-        if m:
-            try:
-                return float(m.group(1))
-            except:
-                return None
     return None
-
 
 def summarize_history(user_id: str, max_turns: int = 6) -> str:
     hist = CHAT_HISTORY.get(user_id, [])[-max_turns:]
     if not hist:
         return "No prior messages."
-    return "\n".join(f"{h['role']}: {h['content']}" for h in hist)
-
+    lines = []
+    for h in hist:
+        lines.append(f"{h['role']}: {h['content']}")
+    return "\\n".join(lines)
 
 def build_prompt(user_id: str, user_msg: str, profile: dict, evidence: list):
     profile_summary = f"Balance: ${profile.get('current_balance',0):.0f}; income: ${profile.get('monthly_income',0):.0f}."
@@ -80,11 +61,8 @@ def build_prompt(user_id: str, user_msg: str, profile: dict, evidence: list):
     )
     return prompt
 
+# fast deterministic rule engine for affordability checks
 def fast_rule_answer(user_msg: str, profile: dict, safety_buffer: float = 200.0):
-    """
-    Quick yes/no affordability rule.
-    Runs only if a valid price with money context is detected.
-    """
     amt = extract_price(user_msg)
     if amt is not None and profile:
         bal = profile.get('current_balance', 0.0)
@@ -95,30 +73,29 @@ def fast_rule_answer(user_msg: str, profile: dict, safety_buffer: float = 200.0)
             return f"No — you likely don't have enough for ${amt:.0f} now (balance ${bal:.0f})."
     return None
 
+# background refine function (runs AGENT.run without timeout)
 def background_refine(user_id: str, prompt: str, evidence):
     try:
-        run_res = AGENT.run(prompt)
+        run_res = AGENT.run(prompt)   # blocking; may take >2s
         refined_text = getattr(run_res, 'content', None) or getattr(run_res, 'text', None) or str(run_res)
     except Exception as e:
         refined_text = f"(Refinement failed: {e})"
     REFINED_RESULTS[user_id] = {'text': refined_text, 'evidence': evidence, 'ts': time.time()}
+    # append to history
     CHAT_HISTORY.setdefault(user_id, []).append({'role': 'assistant', 'content': refined_text})
 
-
+# endpoints
 @app.get('/', response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse('index.html', {'request': request})
-
 
 @app.get('/health')
 def health():
     return {'ok': True}
 
-
 class ChatIn(BaseModel):
     user_id: str
     message: str
-
 
 @app.post('/chat')
 def chat(inp: ChatIn):
@@ -129,29 +106,33 @@ def chat(inp: ChatIn):
 
     CHAT_HISTORY.setdefault(inp.user_id, []).append({'role': 'user', 'content': inp.message})
 
-    # 1) Fast rule (affordability) — only triggers on monetary intent
+    # 1) Fast rule check
     fast_ans = fast_rule_answer(inp.message, profile)
     if fast_ans:
+        # kickoff refine in background (RAG+LLM) to produce a nicer answer later
         evidence = vdb.retrieve(inp.user_id, inp.message, top_k=TOP_K, ef_search=EF_SEARCH)
         prompt = build_prompt(inp.user_id, inp.message, profile, evidence)
         executor.submit(background_refine, inp.user_id, prompt, evidence)
         latency = (time.time() - t0) * 1000.0
         return {'reply': fast_ans, 'latency_ms': latency, 'evidence': [], 'refined_pending': True}
 
-    # 2) RAG + LLM path
+    # 2) Retrieval (fast)
     evidence = vdb.retrieve(inp.user_id, inp.message, top_k=TOP_K, ef_search=EF_SEARCH)
     prompt = build_prompt(inp.user_id, inp.message, profile, evidence)
+
+    # 3) Try a timeout-limited LLM call
     result_text = agent_run_with_timeout(prompt, timeout_sec=LLM_TIMEOUT)
 
     if result_text == FALLBACK_TEXT:
+        # schedule background refine and return fallback now
         executor.submit(background_refine, inp.user_id, prompt, evidence)
         latency = (time.time() - t0) * 1000.0
         return {'reply': result_text, 'latency_ms': latency, 'evidence': evidence, 'refined_pending': True}
 
+    # got a result within timeout
     CHAT_HISTORY.setdefault(inp.user_id, []).append({'role': 'assistant', 'content': result_text})
     latency = (time.time() - t0) * 1000.0
     return {'reply': result_text, 'latency_ms': latency, 'evidence': evidence, 'refined_pending': False}
-
 
 @app.get('/refined/{user_id}')
 def get_refined(user_id: str):
@@ -160,12 +141,10 @@ def get_refined(user_id: str):
         return {'ready': False}
     return {'ready': True, 'text': payload['text'], 'evidence': payload.get('evidence', [])}
 
-
 @app.post('/store')
 def store(user_id: str = Form(...), text: str = Form(...)):
     vdb.add_transaction(user_id, text)
     return {'ok': True, 'user_id': user_id, 'text': text}
-
 
 @app.post('/reset/{user_id}')
 def reset(user_id: str):
