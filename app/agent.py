@@ -15,7 +15,7 @@ _MODEL = OpenAIChat(id=MODEL_NAME, api_key=API_KEY, temperature=0.0, max_tokens=
 AGENT = Agent(model=_MODEL, description='Banking assistant (demo)', markdown=False)
 
 FALLBACK_TEXT = "I could not generate a full answer instantly; quick note: please check your recent transactions."
-
+# timeout decorator
 def agent_run_with_timeout(prompt: str, timeout_sec: float = 2.0):
     """
     Reuse global AGENT. If LLM call doesn't complete within timeout_sec seconds,
